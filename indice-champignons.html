@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indice champignons</title>
+<style>
+  /* ===== 1. LE STYLE (l'apparence de la page) ===== */
+  body { font-family: system-ui, sans-serif; background: #f3efe6; color: #2b2116; margin: 0; padding: 24px; }
+  .carte { max-width: 560px; margin: auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  select { font-size: 16px; padding: 8px; border-radius: 8px; margin: 12px 0 20px; width: 100%; }
+  .verdict { font-size: 26px; font-weight: 700; padding: 16px; border-radius: 12px; text-align: center; }
+  .bon { background: #d8efd3; } .moyen { background: #fbefc6; } .faible { background: #f3d9d3; }
+  .jour { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 14px; }
+  .jour span:first-child { width: 90px; }
+  .barre { height: 14px; background: #4a7fb5; border-radius: 4px; }
+  .petit { font-size: 13px; color: #7a6d5e; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="carte">
+  <!-- ===== 2. LE CONTENU (ce qu'on voit) ===== -->
+  <h1>Indice de pousse</h1>
+  <div>Pluie des 7 derniers jours et température</div>
+
+  <select id="lieu">
+    <option value="45.76,4.84">Lyon</option>
+    <option value="44.84,4.22">Mont Gerbier de Jonc (Ardèche)</option>
+    <option value="46.63,2.72">Forêt de Tronçais (Allier)</option>
+    <option value="44.98,5.33">Forêt de Lente (Vercors)</option>
+    <option value="44.91,4.19">Mont Mézenc (Haute-Loire)</option>
+    <option value="45.66,4.56">Monts du Lyonnais</option>
+    <option value="45.37,4.52">Massif du Pilat</option>
+    <option value="45.34,5.81">Chartreuse</option>
+    <option value="45.72,3.02">Puy de Dôme</option>
+  </select>
+
+  <div id="verdict" class="verdict">Chargement…</div>
+  <p id="resume"></p>
+  <div id="jours"></div>
+
+  <p class="petit">
+    Données : <a href="https://open-meteo.com/">Open-Meteo</a>.
+    Mis à jour à <span id="heure">…</span>.
+    Indice indicatif, fait pour apprendre : rien ne remplace l'œil du cueilleur.
+  </p>
+</div>
+
+<script>
+// ===== 3. LE CODE (ce qui se passe) =====
+
+// Cette fonction va chercher la météo pour un lieu, puis affiche le résultat
+async function chargerMeteo() {
+  // On lit le lieu choisi dans la liste, ex: "45.76,4.84"
+  const [lat, lon] = document.getElementById("lieu").value.split(",");
+
+  // On construit l'adresse de l'API, comme tu l'as fait à la main dans le navigateur
+  const adresse = "https://api.open-meteo.com/v1/forecast"
+    + "?latitude=" + lat + "&longitude=" + lon
+    + "&daily=precipitation_sum,temperature_2m_max,temperature_2m_min"
+    + "&past_days=7&forecast_days=1&timezone=Europe/Paris";
+
+  try {
+    // On appelle l'API et on transforme la réponse en JSON
+    const reponse = await fetch(adresse);
+    const donnees = await reponse.json();
+    const d = donnees.daily;   // la boîte "daily" que tu as vue
+
+    // Les 7 premiers éléments des listes = les 7 jours passés
+    const dates = d.time.slice(0, 7);
+    const pluies = d.precipitation_sum.slice(0, 7);
+    const tMax = d.temperature_2m_max.slice(0, 7);
+    const tMin = d.temperature_2m_min.slice(0, 7);
+
+    // On additionne la pluie et on fait la moyenne des températures
+    const totalPluie = pluies.reduce((a, b) => a + b, 0);
+    let somme = 0;
+    for (let i = 0; i < 7; i++) somme += (tMax[i] + tMin[i]) / 2;
+    const tMoyenne = somme / 7;
+
+    // La règle (simplifiée) : il faut de l'eau ET de la douceur
+    let texte, classe;
+    if (totalPluie >= 20 && tMoyenne >= 8 && tMoyenne <= 20) { texte = "Bonnes chances"; classe = "bon"; }
+    else if (totalPluie >= 10 && tMoyenne >= 5) { texte = "Chances moyennes"; classe = "moyen"; }
+    else { texte = "Peu de chances"; classe = "faible"; }
+
+    // On écrit le résultat dans la page
+    const v = document.getElementById("verdict");
+    v.textContent = texte;
+    v.className = "verdict " + classe;
+    document.getElementById("resume").textContent =
+      "Pluie sur 7 jours : " + totalPluie.toFixed(1) + " mm. Température moyenne : " + tMoyenne.toFixed(1) + " °C.";
+
+    // Une barre par jour, plus elle est longue, plus il a plu
+    let html = "";
+    for (let i = 0; i < 7; i++) {
+      const largeur = Math.min(pluies[i] * 10, 300);
+      html += '<div class="jour"><span>' + dates[i].slice(5).split("-").reverse().join("/") + '</span>'
+            + '<div class="barre" style="width:' + largeur + 'px"></div>'
+            + '<span>' + pluies[i].toFixed(1) + ' mm</span></div>';
+    }
+    document.getElementById("jours").innerHTML = html;
+    document.getElementById("heure").textContent = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+  } catch (erreur) {
+    // Si l'API ne répond pas, on le dit clairement au lieu de casser la page
+    document.getElementById("verdict").textContent = "Météo indisponible pour le moment";
+  }
+}
+
+// On lance une première fois, puis à chaque changement de lieu
+chargerMeteo();
+document.getElementById("lieu").addEventListener("change", chargerMeteo);
+</script>
+</body>
+</html>
